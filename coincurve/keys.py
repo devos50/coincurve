@@ -22,6 +22,15 @@ from coincurve.utils import (
 from ._libsecp256k1 import ffi, lib
 
 
+class Keypair(object):
+
+    def __init__(self, context: Context = GLOBAL_CONTEXT):
+        self.secret = get_valid_secret()
+        self.context = context
+        self.keypair = ffi.new('secp256k1_keypair *')
+        lib.secp256k1_keypair_create(self.context.ctx, self.keypair, self.secret)
+
+
 class PrivateKey:
     def __init__(self, secret: bytes = None, context: Context = GLOBAL_CONTEXT):
         """

@@ -183,6 +183,7 @@ class build_clib(_build_clib):
             '--enable-module-ecdh',
             '--enable-module-extrakeys',
             '--enable-module-schnorrsig',
+            '--enable-module-musig',
             '--enable-benchmark=no',
             '--enable-tests=no',
             '--enable-openssl-tests=no',
