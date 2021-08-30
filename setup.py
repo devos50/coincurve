@@ -33,9 +33,9 @@ BUILDING_FOR_WINDOWS = detect_dll()
 MAKE = 'gmake' if platform.system() in ['FreeBSD', 'OpenBSD'] else 'make'
 
 # Version of libsecp256k1 to download if none exists in the `libsecp256k1` directory
-UPSTREAM_REF = os.getenv('COINCURVE_UPSTREAM_REF') or '881b15cb4371d4b58d851575f2eb1832e0dfd5b2'
+UPSTREAM_REF = os.getenv('COINCURVE_UPSTREAM_REF') or '2301071766eefb1c2cac836e21a0f514d8ccda81'
 
-LIB_TARBALL_URL = f'https://github.com/ElementsProject/secp256k1-zkp/archive/{UPSTREAM_REF}.tar.gz'
+LIB_TARBALL_URL = f'https://github.com/jonasnick/secp256k1-zkp/archive/{UPSTREAM_REF}.tar.gz'
 
 
 # We require setuptools >= 3.3

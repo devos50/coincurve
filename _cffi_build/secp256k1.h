@@ -22,6 +22,18 @@ typedef struct {
     unsigned char data[32];
 } secp256k1_musig_partial_signature;
 
+typedef struct {
+    unsigned char data[64];
+} secp256k1_musig_secnonce;
+
+typedef struct {
+    unsigned char data[65];
+} secp256k1_musig_session_cache;
+
+typedef struct {
+    unsigned char data[64];
+} secp256k1_musig_template;
+
 typedef int (*secp256k1_nonce_function)(
     unsigned char *nonce32,
     const unsigned char *msg32,
