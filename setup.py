@@ -33,9 +33,9 @@ BUILDING_FOR_WINDOWS = detect_dll()
 MAKE = 'gmake' if platform.system() in ['FreeBSD', 'OpenBSD'] else 'make'
 
 # Version of libsecp256k1 to download if none exists in the `libsecp256k1` directory
-UPSTREAM_REF = os.getenv('COINCURVE_UPSTREAM_REF') or 'f2d9aeae6d5a7c7fbbba8bbb38b1849b784beef7'
+UPSTREAM_REF = os.getenv('COINCURVE_UPSTREAM_REF') or 'c410f567f478fdf6bbe0dfee3de8c4421c9bfe35'
 
-LIB_TARBALL_URL = f'https://github.com/bitcoin-core/secp256k1/archive/{UPSTREAM_REF}.tar.gz'
+LIB_TARBALL_URL = f'https://github.com/jesseposner/secp256k1-zkp/archive/{UPSTREAM_REF}.tar.gz'
 
 
 # We require setuptools >= 3.3
@@ -177,6 +177,8 @@ class build_clib(_build_clib):
             '--disable-dependency-tracking',
             '--with-pic',
             '--enable-module-recovery',
+            '--enable-module-extrakeys',
+            '--enable-module-frost',
             '--prefix',
             os.path.abspath(self.build_clib),
             '--enable-experimental',
@@ -197,6 +199,8 @@ class build_clib(_build_clib):
         self.build_flags['library_dirs'].extend(build_flags('libsecp256k1', 'L', build_temp))
         if not has_system_lib():
             self.build_flags['define'].append(('CFFI_ENABLE_RECOVERY', None))
+            self.build_flags['define'].append(('USE_NUM_NONE', 1))
+            self.build_flags['define'].append(('SECP256K1_WIDEMUL_INT128', 1))
         else:
             pass
 

@@ -1,5 +1,7 @@
 typedef struct secp256k1_context_struct secp256k1_context;
 
+typedef struct secp256k1_scratch_space_struct secp256k1_scratch_space;
+
 typedef struct {
     unsigned char data[64];
 } secp256k1_pubkey;
@@ -7,6 +9,10 @@ typedef struct {
 typedef struct {
     unsigned char data[64];
 } secp256k1_ecdsa_signature;
+
+typedef struct {
+    unsigned char data[64];
+} secp256k1_xonly_pubkey;
 
 typedef int (*secp256k1_nonce_function)(
     unsigned char *nonce32,
