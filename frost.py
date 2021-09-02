@@ -12,6 +12,8 @@ sessions = []
 private_coefficients = []
 public_coefficients = []
 pubkeys = []
+shares = []
+agg_shares = []
 
 # Initialize variables
 for ind in range(NUM_PARTICIPANTS):
@@ -23,6 +25,12 @@ for ind in range(NUM_PARTICIPANTS):
 
     coefficients = ffi.new("secp256k1_pubkey[%d]" % THRESHOLD)
     public_coefficients.append(coefficients)
+
+    my_shares = ffi.new("secp256k1_frost_share[%d]" % NUM_PARTICIPANTS)
+    shares.append(my_shares)
+
+    my_agg_share = ffi.new("secp256k1_frost_share *")
+    agg_shares.append(my_agg_share)
 
 # Round 1.1, 1.2, 1.3, and 1.4
 for ind in range(NUM_PARTICIPANTS):
@@ -51,3 +59,17 @@ for ind in range(NUM_PARTICIPANTS):
         raise Exception("Combining public keys failed for participant %d" % (ind + 1))
 
 # Round 2.1
+for ind in range(NUM_PARTICIPANTS):
+    lib.secp256k1_frost_generate_shares(shares[ind],
+                                        private_coefficients[ind],
+                                        sessions[ind])
+
+# Round 2.3
+for i in range(NUM_PARTICIPANTS):
+    rec_shares = []
+    for j in range(NUM_PARTICIPANTS):
+        rec_shares.append(shares[j][sessions[i].my_index - 1])
+
+    lib.secp256k1_frost_aggregate_shares(agg_shares[i], rec_shares, sessions[i])
+
+# Reconstruct secret

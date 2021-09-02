@@ -24,3 +24,16 @@ int secp256k1_frost_pubkey_combine(
     secp256k1_frost_keygen_session *session,
     const secp256k1_pubkey *pubkeys
 );
+
+void secp256k1_frost_generate_shares(
+    secp256k1_frost_share *shares,
+    secp256k1_scalar *coeff,
+    const secp256k1_frost_keygen_session *session
+);
+
+
+void secp256k1_frost_aggregate_shares(
+    secp256k1_frost_share *aggregate_share,
+    const secp256k1_frost_share *shares,
+    const secp256k1_frost_keygen_session *session
+);

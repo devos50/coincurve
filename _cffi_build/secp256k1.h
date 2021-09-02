@@ -23,6 +23,10 @@ typedef int (*secp256k1_nonce_function)(
     unsigned int attempt
 );
 
+typedef struct {
+    unsigned char data[32];
+} secp256k1_frost_share;
+
 #define SECP256K1_FLAGS_TYPE_MASK ...
 #define SECP256K1_FLAGS_TYPE_CONTEXT ...
 #define SECP256K1_FLAGS_TYPE_COMPRESSION ...
