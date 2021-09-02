@@ -1,3 +1,45 @@
+typedef struct {
+    uint64_t d[4];
+} secp256k1_scalar;
+
+typedef struct {
+    uint32_t n[8];
+} secp256k1_fe_storage;
+
+typedef struct {
+    secp256k1_fe_storage x;
+    secp256k1_fe_storage y;
+} secp256k1_ge_storage;
+
+typedef struct {
+    /* For accelerating the computation of a*P + b*G: */
+    secp256k1_ge_storage (*pre_g)[];    /* odd multiples of the generator */
+    secp256k1_ge_storage (*pre_g_128)[]; /* odd multiples of 2^128*generator */
+} secp256k1_ecmult_context;
+
+typedef struct {
+    uint32_t n[10];
+} secp256k1_fe;
+
+typedef struct {
+    secp256k1_fe x; /* actual X: x/z^2 */
+    secp256k1_fe y; /* actual Y: y/z^3 */
+    secp256k1_fe z;
+    int infinity; /* whether this represents the point at infinity */
+} secp256k1_gej;
+
+typedef struct {
+    secp256k1_ge_storage (*prec)[64][64]; /* prec[j][i] = (PREC_G)^j * i * G + U_i */
+    secp256k1_scalar blind;
+    secp256k1_gej initial;
+} secp256k1_ecmult_gen_context;
+
+struct secp256k1_context_struct {
+    secp256k1_ecmult_context ecmult_ctx;
+    secp256k1_ecmult_gen_context ecmult_gen_ctx;
+    int declassify;
+};
+
 typedef struct secp256k1_context_struct secp256k1_context;
 
 typedef struct secp256k1_scratch_space_struct secp256k1_scratch_space;

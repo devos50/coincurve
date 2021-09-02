@@ -14,6 +14,10 @@ public_coefficients = []
 pubkeys = []
 shares = []
 agg_shares = []
+participants = []
+l = ffi.new("secp256k1_scalar *")
+s1 = ffi.new("secp256k1_scalar *")
+s2 = ffi.new("secp256k1_scalar *")
 
 # Initialize variables
 for ind in range(NUM_PARTICIPANTS):
@@ -73,3 +77,17 @@ for i in range(NUM_PARTICIPANTS):
     lib.secp256k1_frost_aggregate_shares(agg_shares[i], rec_shares, sessions[i])
 
 # Reconstruct secret
+# ONLY FOR TESTING PURPOSES
+
+for i in range(THRESHOLD):
+    participants.append(sessions[i].my_index)
+
+lib.secp256k1_scalar_clear(s2)
+
+for i in range(THRESHOLD):
+    lib.secp256k1_frost_lagrange_coefficient(l, participants, THRESHOLD, sessions[i].my_index)
+    lib.secp256k1_scalar_set_b32(s1, agg_shares[i].data, ffi.NULL)
+    lib.secp256k1_scalar_mul(s1, s1, l)
+    lib.secp256k1_scalar_add(s2, s2, s1)
+
+print(context.ctx.ecmut_gen_ctx)

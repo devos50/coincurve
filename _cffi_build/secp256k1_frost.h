@@ -37,3 +37,10 @@ void secp256k1_frost_aggregate_shares(
     const secp256k1_frost_share *shares,
     const secp256k1_frost_keygen_session *session
 );
+
+void secp256k1_frost_lagrange_coefficient(
+    secp256k1_scalar *r,
+    const size_t *participant_indexes,
+    const size_t n_participants,
+    const size_t my_index
+);
