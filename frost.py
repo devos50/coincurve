@@ -1,3 +1,4 @@
+import os
 from binascii import hexlify
 
 from coincurve._libsecp256k1 import ffi, lib
@@ -51,7 +52,7 @@ for ind in range(NUM_PARTICIPANTS):
 
 # Round 1.1, 1.2, 1.3, and 1.4
 for ind in range(NUM_PARTICIPANTS):
-    sk = bytes(bytearray([ind] * 32))
+    sk = os.urandom(32)
     print("Secret of participant %d: %s" % (ind, hexlify(sk).decode()))
     res = lib.secp256k1_frost_keygen_init(context.ctx,
                                           sessions[ind],
@@ -123,7 +124,7 @@ assert lib.secp256k1_scalar_eq(s1, s2)
 print("Global secret: %d %d %d %d" % (s1.d[0], s1.d[1], s1.d[2], s1.d[3]))
 
 # Test signing
-msg = bytes(bytearray([0] * 32))
+msg = os.urandom(32)
 lib.secp256k1_scalar_get_b32(sk, s1)
 assert lib.secp256k1_keypair_create(context.ctx, keypair, sk)
 assert lib.secp256k1_schnorrsig_sign(context.ctx, sig, msg, keypair, ffi.NULL, ffi.NULL)
@@ -133,7 +134,7 @@ assert lib.secp256k1_schnorrsig_verify(context.ctx, sig, msg, ptr)
 print("Schnorr signature with full key: %s" % hexlify(bytes(sig)).decode())
 
 # Generate nonces
-the_id = bytes(bytearray([0] * 32))
+the_id = os.urandom(32)
 
 pk_list = []
 
@@ -180,7 +181,7 @@ lib.secp256k1_scalar_get_b32(ffi.addressof(sig, 32), s1)
 ffi.memmove(ffi.addressof(sig, 0), pk2, 32)
 
 sig_hex = hexlify(bytes(sig)).decode()
+print("Resulting Schnorr signature: %s" % sig_hex)
 
-ptr = ffi.new("secp256k1_xonly_pubkey *", sessions[1].combined_pk)
-assert lib.secp256k1_schnorrsig_verify(context.ctx, sig, msg, ptr)
+assert lib.secp256k1_schnorrsig_verify(context.ctx, sig, msg, ffi.addressof(sessions[1], "combined_pk"))
 print("SCHNORR SIGNATURE VALID")
