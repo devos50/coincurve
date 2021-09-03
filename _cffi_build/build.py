@@ -25,10 +25,18 @@ def _mk_ffi(sources, name='_libsecp256k1', **kwargs):
 
 modules = [
     Source('secp256k1.h', '#include <secp256k1.h>'),
+    Source('util.h', '#include <util.h>'),
     Source('scalar.h', '#include <scalar.h>'),
+    Source('ecmult.h', '#include <ecmult.h>'),
+    Source('scratch.h', '#include <scratch.h>'),
+    Source('group.h', '#include <group.h>'),
+    Source('field.h', '#include <field.h>'),
+    Source('field_5x52.h', '#include <field_5x52.h>'),
+    Source('ecmult_gen.h', '#include <ecmult_gen.h>'),
     Source('secp256k1_ecdh.h', '#include <secp256k1_ecdh.h>'),
     Source('secp256k1_recovery.h', '#include <secp256k1_recovery.h>'),
     Source('secp256k1_extrakeys.h', '#include <secp256k1_extrakeys.h>'),
+    Source('secp256k1_schnorrsig.h', '#include <secp256k1_schnorrsig.h>'),
     Source('secp256k1_frost.h', '#include <secp256k1_frost.h>'),
 ]
 

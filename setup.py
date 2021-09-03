@@ -183,6 +183,7 @@ class build_clib(_build_clib):
             os.path.abspath(self.build_clib),
             '--enable-experimental',
             '--enable-module-ecdh',
+            '--enable-module-schnorrsig',
             '--enable-benchmark=no',
             '--enable-tests=no',
             '--enable-openssl-tests=no',
@@ -201,6 +202,7 @@ class build_clib(_build_clib):
             self.build_flags['define'].append(('CFFI_ENABLE_RECOVERY', None))
             self.build_flags['define'].append(('USE_NUM_NONE', 1))
             self.build_flags['define'].append(('SECP256K1_WIDEMUL_INT128', 1))
+            self.build_flags['define'].append(('ECMULT_GEN_PREC_BITS', 4))
         else:
             pass
 

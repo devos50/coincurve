@@ -44,3 +44,25 @@ void secp256k1_frost_lagrange_coefficient(
     const size_t n_participants,
     const size_t my_index
 );
+
+void secp256k1_ecmult_gen_with_ctx(
+    const secp256k1_context* ctx,
+    secp256k1_gej *r,
+    const secp256k1_scalar *a
+);
+
+void secp256k1_pubkey_save(
+    secp256k1_pubkey* pubkey,
+    secp256k1_ge* ge
+);
+
+int secp256k1_nonce_function_frost(
+    secp256k1_frost_secnonce *k,
+    const unsigned char *session_id,
+    const unsigned char *key32,
+    const unsigned char *msg32,
+    const unsigned char *combined_pk,
+    const unsigned char *algo,
+    size_t algolen,
+    void *data
+);

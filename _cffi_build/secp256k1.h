@@ -3,7 +3,11 @@ typedef struct {
 } secp256k1_scalar;
 
 typedef struct {
-    uint32_t n[8];
+    unsigned char data[96];
+} secp256k1_keypair;
+
+typedef struct {
+    uint64_t n[4];
 } secp256k1_fe_storage;
 
 typedef struct {
@@ -18,8 +22,14 @@ typedef struct {
 } secp256k1_ecmult_context;
 
 typedef struct {
-    uint32_t n[10];
+    uint64_t n[5];
 } secp256k1_fe;
+
+typedef struct {
+    secp256k1_fe x;
+    secp256k1_fe y;
+    int infinity; /* whether this represents the point at infinity */
+} secp256k1_ge;
 
 typedef struct {
     secp256k1_fe x; /* actual X: x/z^2 */
@@ -29,16 +39,10 @@ typedef struct {
 } secp256k1_gej;
 
 typedef struct {
-    secp256k1_ge_storage (*prec)[64][64]; /* prec[j][i] = (PREC_G)^j * i * G + U_i */
+    secp256k1_ge_storage (*prec)[64][16]; /* prec[j][i] = (PREC_G)^j * i * G + U_i */
     secp256k1_scalar blind;
     secp256k1_gej initial;
 } secp256k1_ecmult_gen_context;
-
-struct secp256k1_context_struct {
-    secp256k1_ecmult_context ecmult_ctx;
-    secp256k1_ecmult_gen_context ecmult_gen_ctx;
-    int declassify;
-};
 
 typedef struct secp256k1_context_struct secp256k1_context;
 
@@ -64,6 +68,10 @@ typedef int (*secp256k1_nonce_function)(
     void *data,
     unsigned int attempt
 );
+
+typedef struct {
+    unsigned char data[64];
+} secp256k1_frost_secnonce;
 
 typedef struct {
     unsigned char data[32];
