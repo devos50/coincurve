@@ -5,14 +5,15 @@ from coincurve._libsecp256k1 import ffi, lib
 
 from coincurve import GLOBAL_CONTEXT
 
-NUM_PARTICIPANTS = 7
-THRESHOLD = 3
-ACTIVE_SIGNERS = 7
+NUM_PARTICIPANTS = 4
+THRESHOLD = 2
+ACTIVE_SIGNERS = 3
 context = GLOBAL_CONTEXT
 msg = os.urandom(32)
 session_id = os.urandom(32)
 participants = []
 active_participants = [ind + 1 for ind in range(ACTIVE_SIGNERS)]
+print("Participants: %d, threshold: %d, #signers: %d" % (NUM_PARTICIPANTS, THRESHOLD, ACTIVE_SIGNERS))
 
 pubkeys = ffi.new("secp256k1_pubkey[%d]" % NUM_PARTICIPANTS)
 
