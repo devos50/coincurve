@@ -7,181 +7,212 @@ from coincurve import GLOBAL_CONTEXT
 
 NUM_PARTICIPANTS = 3
 THRESHOLD = 2
-
 context = GLOBAL_CONTEXT
-sessions = []
-private_coefficients = []
-public_coefficients = []
-pubkeys = ffi.new("secp256k1_pubkey[%d]" % NUM_PARTICIPANTS)
-shares = []
-agg_shares = []
+msg = os.urandom(32)
+session_id = os.urandom(32)
 participants = []
-p_sigs = []
-l = ffi.new("secp256k1_scalar *")
-s1 = ffi.new("secp256k1_scalar *")
-s2 = ffi.new("secp256k1_scalar *")
-rj = ffi.new("secp256k1_gej *")
-rp = ffi.new("secp256k1_ge *")
-keypair = ffi.new("secp256k1_keypair *")
-k = ffi.new("secp256k1_frost_secnonce *")
-pk1 = ffi.new("unsigned char[33]")
-pk2 = ffi.new("unsigned char[33]")
-sig = ffi.new("unsigned char[64]")
-size = ffi.new("size_t *")
-size[0] = 33
+active_participants = []
 
-# Initialize variables
+pubkeys = ffi.new("secp256k1_pubkey[%d]" % NUM_PARTICIPANTS)
+
+
+class Participant:
+    def __init__(self, index, num_participants, threshold):
+        self.index = index
+        self.num_participants = num_participants
+        self.threshold = threshold
+        self.session = ffi.new("secp256k1_frost_keygen_session *")
+        self.secret_key = os.urandom(32)
+        self.private_coefficients = ffi.new("secp256k1_scalar[%d]" % threshold)
+        self.public_coefficients = ffi.new("secp256k1_pubkey[%d]" % threshold)
+        self.secret_shares = ffi.new("secp256k1_frost_share[%d]" % num_participants)
+        self.aggregated_share = ffi.new("secp256k1_frost_share *")
+        self.partial_signature = ffi.new("unsigned char[32]")
+        self.nonce = ffi.new("secp256k1_frost_secnonce *")
+
+    def init_key(self):
+        res = lib.secp256k1_frost_keygen_init(context.ctx,
+                                              self.session,
+                                              self.private_coefficients,
+                                              self.public_coefficients,
+                                              self.threshold,
+                                              self.num_participants,
+                                              self.index + 1,
+                                              self.secret_key)
+
+        if res == 0:
+            raise Exception("Keygen initialization failed for participant %d" % (ind + 1))
+
+    def combine_pubkeys(self, pubkeys_of_others):
+        res = lib.secp256k1_frost_pubkey_combine(context.ctx,
+                                                 ffi.NULL,
+                                                 self.session,
+                                                 pubkeys_of_others)
+        if res == 0:
+            raise Exception("Combining public keys failed for participant %d" % (ind + 1))
+
+    def generate_shares(self):
+        lib.secp256k1_frost_generate_shares(self.secret_shares,
+                                            self.private_coefficients,
+                                            self.session)
+
+    def aggregate_shares(self, other_shares):
+        lib.secp256k1_frost_aggregate_shares(self.aggregated_share,
+                                             other_shares,
+                                             self.session)
+
+    def generate_nonced_pubkey(self):
+        serialized_group_key = ffi.new("unsigned char[33]")
+        lib.secp256k1_xonly_pubkey_serialize(context.ctx, serialized_group_key, ffi.addressof(self.session, "combined_pk"))
+        lib.secp256k1_nonce_function_frost(self.nonce,
+                                           session_id,
+                                           self.aggregated_share.data,
+                                           msg,
+                                           serialized_group_key,
+                                           b"FROST/non",
+                                           9,
+                                           ffi.NULL)
+
+        s = ffi.new("secp256k1_scalar *")
+        rj = ffi.new("secp256k1_gej *")
+        rp = ffi.new("secp256k1_ge *")
+
+        lib.secp256k1_scalar_set_b32(s, self.nonce.data, ffi.NULL)
+        lib.secp256k1_ecmult_gen_with_ctx(context.ctx, rj, s)
+        lib.secp256k1_ge_set_gej(rp, rj)
+        lib.secp256k1_pubkey_save(ffi.addressof(pubkeys, participant_index), rp)  # Save the nonced pubkey in pubkeys
+
+    def compute_partial_signature(self, group_commitment, aggregated_pk, pk_parity):
+        # Step 4+5 of the sign protocol
+        scalar1 = ffi.new("secp256k1_scalar *")
+        scalar2 = ffi.new("secp256k1_scalar *")
+        c = ffi.new("secp256k1_scalar *")
+        l = ffi.new("secp256k1_scalar *")
+
+        # scalar2 is the group commitment
+        lib.secp256k1_schnorrsig_challenge(c, group_commitment, msg, ffi.addressof(aggregated_pk, 1))  # Challenge stored in c
+        lib.secp256k1_scalar_set_b32(scalar1, self.aggregated_share.data, ffi.NULL)
+        lib.secp256k1_frost_lagrange_coefficient(l, active_participants, THRESHOLD, self.session.my_index)
+        lib.secp256k1_scalar_mul(scalar1, scalar1, l)
+        lib.secp256k1_scalar_mul(scalar2, c, scalar1)
+        lib.secp256k1_nonce_function_frost(self.nonce, session_id, self.aggregated_share.data, msg,
+                                           ffi.addressof(aggregated_pk, 1), b"FROST/non", 9,
+                                           ffi.NULL)
+        lib.secp256k1_scalar_set_b32(scalar1, participant.nonce.data, ffi.NULL)
+        if pk_parity:
+            lib.secp256k1_scalar_negate(scalar1, scalar1)
+        lib.secp256k1_scalar_add(scalar2, scalar2, scalar1)
+        lib.secp256k1_scalar_get_b32(self.partial_signature, scalar2)
+
+
+class Aggregator:
+    def __init__(self, participant):
+        self.participant = participant
+        self.participant.session.n_signers = self.participant.threshold
+        self.signature = ffi.new("unsigned char[64]")
+        self.aggregated_pk = ffi.new("unsigned char[33]")
+
+    def aggregate_shares(self, aggregated_shares):
+        scalar1 = ffi.new("secp256k1_scalar *")
+        scalar2 = ffi.new("secp256k1_scalar *")
+        rj = ffi.new("secp256k1_gej *")
+        rp = ffi.new("secp256k1_ge *")
+        size = ffi.new("size_t *")
+        size[0] = 33
+
+        for participant_index, aggregated_share in aggregated_shares:
+            l = ffi.new("secp256k1_scalar *")
+            lib.secp256k1_frost_lagrange_coefficient(l, active_participants, THRESHOLD, participant_index)
+            lib.secp256k1_scalar_set_b32(scalar1, aggregated_share.data, ffi.NULL)
+            lib.secp256k1_scalar_mul(scalar1, scalar1, l)
+            lib.secp256k1_scalar_add(scalar2, scalar2, scalar1)
+
+        lib.secp256k1_ecmult_gen_with_ctx(context.ctx, rj, scalar2)
+        lib.secp256k1_ge_set_gej(rp, rj)
+        lib.secp256k1_pubkey_save(ffi.addressof(pubkeys, self.participant.session.my_index - 1), rp)
+
+        assert lib.secp256k1_ec_pubkey_serialize(context.ctx, self.aggregated_pk, size, ffi.addressof(pubkeys, self.participant.session.my_index - 1), lib.SECP256K1_EC_COMPRESSED)
+
+    def compute_signature(self, partial_signatures, group_commitment):
+        z = ffi.new("secp256k1_scalar *")
+        zi = ffi.new("secp256k1_scalar *")
+        for partial_signature in partial_signatures:
+            lib.secp256k1_scalar_set_b32(zi, partial_signature, ffi.NULL)
+            lib.secp256k1_scalar_add(z, z, zi)
+
+        ffi.memmove(ffi.addressof(self.signature, 0), group_commitment, 32)
+        lib.secp256k1_scalar_get_b32(ffi.addressof(self.signature, 32), z)
+
+
+# Initialize participants
 for ind in range(NUM_PARTICIPANTS):
-    session = ffi.new("secp256k1_frost_keygen_session *")
-    sessions.append(session)
-
-    coefficients = ffi.new("secp256k1_scalar[%d]" % THRESHOLD)
-    private_coefficients.append(coefficients)
-
-    coefficients = ffi.new("secp256k1_pubkey[%d]" % THRESHOLD)
-    public_coefficients.append(coefficients)
-
-    my_shares = ffi.new("secp256k1_frost_share[%d]" % NUM_PARTICIPANTS)
-    shares.append(my_shares)
-
-    my_agg_share = ffi.new("secp256k1_frost_share *")
-    agg_shares.append(my_agg_share)
-
-    p_sig = ffi.new("unsigned char[32]")
-    p_sigs.append(p_sig)
+    participant = Participant(ind, NUM_PARTICIPANTS, THRESHOLD)
+    participant.init_key()
+    participants.append(participant)
 
 # Round 1.1, 1.2, 1.3, and 1.4
-for ind in range(NUM_PARTICIPANTS):
-    sk = os.urandom(32)
-    print("Secret of participant %d: %s" % (ind, hexlify(sk).decode()))
-    res = lib.secp256k1_frost_keygen_init(context.ctx,
-                                          sessions[ind],
-                                          private_coefficients[ind],
-                                          public_coefficients[ind],
-                                          THRESHOLD,
-                                          NUM_PARTICIPANTS,
-                                          ind + 1,
-                                          sk)
-
-    if res == 0:
-        raise Exception("Keygen initialization failed for participant %d" % (ind + 1))
-
-    pubkeys[ind] = sessions[ind].coeff_pk
+# TODO share public keys with others
+for participant in participants:
+    pubkeys[participant.index] = participant.session.coeff_pk
 
 # Round 2.4
-for ind in range(NUM_PARTICIPANTS):
-    res = lib.secp256k1_frost_pubkey_combine(context.ctx,
-                                             ffi.NULL,
-                                             sessions[ind],
-                                             pubkeys)
-    if res == 0:
-        raise Exception("Combining public keys failed for participant %d" % (ind + 1))
+# Each participant now derives the (same) group public key
+for participant in participants:
+    participant.combine_pubkeys(pubkeys)
+
+combined_pks = [bytes(participant.session.combined_pk.data) for participant in participants]
+assert all(x == combined_pks[0] for x in combined_pks)
+print("Group public key: %s" % hexlify(bytes(participants[0].session.combined_pk.data)).decode())
 
 # Round 2.1
-for ind in range(NUM_PARTICIPANTS):
-    lib.secp256k1_frost_generate_shares(shares[ind],
-                                        private_coefficients[ind],
-                                        sessions[ind])
+# Each participant generates its secret shares
+for participant in participants:
+    participant.generate_shares()
 
 # Round 2.3
-for i in range(NUM_PARTICIPANTS):
+# TODO share secret shares with other participants
+for participant in participants:
     rec_shares = []
-    for j in range(NUM_PARTICIPANTS):
-        rec_shares.append(shares[j][sessions[i].my_index - 1])
+    for other_participant in participants:
+        rec_shares.append(other_participant.secret_shares[participant.session.my_index - 1])
 
-    lib.secp256k1_frost_aggregate_shares(agg_shares[i], rec_shares, sessions[i])
+    participant.aggregate_shares(rec_shares)
 
-# Reconstruct secret
-# ONLY FOR TESTING PURPOSES
+# Set the participants that are going to sign
+for participant_index in range(THRESHOLD):
+    active_participants.append(participants[participant_index].session.my_index)
 
-for i in range(THRESHOLD):
-    participants.append(sessions[i].my_index)
+# DONE BY AGGREGATOR
+aggregator = Aggregator(participants[0])
+aggregated_shares = [(participants[ind].session.my_index, participants[ind].aggregated_share) for ind in range(THRESHOLD)]
+aggregator.aggregate_shares(aggregated_shares)
 
-lib.secp256k1_scalar_clear(s2)
+# Generate nonce pks, done by participants
+for participant_index in range(THRESHOLD):
+    participant = participants[participant_index]
+    participant.generate_nonced_pubkey()
+    print("Nonce pubkey of participant %d: %s" % (participant_index, hexlify(bytes(pubkeys[participant_index].data)).decode()))
 
-for i in range(THRESHOLD):
-    lib.secp256k1_frost_lagrange_coefficient(l, participants, THRESHOLD, sessions[i].my_index)
-    lib.secp256k1_scalar_set_b32(s1, agg_shares[i].data, ffi.NULL)
-    lib.secp256k1_scalar_mul(s1, s1, l)
-    lib.secp256k1_scalar_add(s2, s2, s1)
+# DONE BY AGGREGATOR
+group_commitment = ffi.new("unsigned char[33]")
+assert lib.secp256k1_frost_pubkey_combine(context.ctx, ffi.NULL, aggregator.participant.session, pubkeys)  # Override the combined_key in the session of the aggregator!
+print("Combined key: %s" % hexlify(bytes(aggregator.participant.session.combined_pk.data)).decode())
+assert lib.secp256k1_xonly_pubkey_serialize(context.ctx, group_commitment, ffi.addressof(aggregator.participant.session, "combined_pk"))  # group_commitment <- serialized(combined_pk)
 
-lib.secp256k1_ecmult_gen_with_ctx(context.ctx, rj, s2)
-lib.secp256k1_ge_set_gej(rp, rj)
-ptr = ffi.new("secp256k1_pubkey *", pubkeys[0])
-lib.secp256k1_pubkey_save(ptr, rp)
-assert lib.secp256k1_ec_pubkey_serialize(context.ctx, pk1, size, ptr, lib.SECP256K1_EC_COMPRESSED)
-ptr = ffi.new("secp256k1_xonly_pubkey *", sessions[0].combined_pk)
-assert lib.secp256k1_xonly_pubkey_serialize(context.ctx, pk2, ptr)
-assert lib.secp256k1_memcmp_var(ffi.addressof(pk1, 1), pk2, 32) == 0
-lib.secp256k1_scalar_clear(s1)
+# TODO share group commitment with others
 
-for i in range(NUM_PARTICIPANTS):
-    ptr = ffi.new("secp256k1_scalar *", private_coefficients[i][0])
-    lib.secp256k1_scalar_add(s1, s1, ptr)
+# Generate partial signatures, done by participants
+for participant_index in range(THRESHOLD):
+    participant = participants[participant_index]
+    participant.compute_partial_signature(group_commitment, aggregator.aggregated_pk, aggregator.participant.session.pk_parity)
+    print("Partial signature of participant %d: %s" % (participant_index, hexlify(bytes(participant.partial_signature)).decode()))
 
-assert lib.secp256k1_scalar_eq(s1, s2)
+# Combine partial signatures (step 7c)
+partial_signatures = [participants[ind].partial_signature for ind in range(THRESHOLD)]
+aggregator.compute_signature(partial_signatures, group_commitment)
 
-print("Global secret: %d %d %d %d" % (s1.d[0], s1.d[1], s1.d[2], s1.d[3]))
-
-# Test signing
-msg = os.urandom(32)
-lib.secp256k1_scalar_get_b32(sk, s1)
-assert lib.secp256k1_keypair_create(context.ctx, keypair, sk)
-assert lib.secp256k1_schnorrsig_sign(context.ctx, sig, msg, keypair, ffi.NULL, ffi.NULL)
-ptr = ffi.new("secp256k1_xonly_pubkey *", sessions[0].combined_pk)
-assert lib.secp256k1_schnorrsig_verify(context.ctx, sig, msg, ptr)
-
-print("Schnorr signature with full key: %s" % hexlify(bytes(sig)).decode())
-
-# Generate nonces
-the_id = os.urandom(32)
-
-pk_list = []
-
-for i in range(THRESHOLD):
-    lib.secp256k1_nonce_function_frost(k, the_id, agg_shares[i].data, msg, pk2, b"FROST/non", 9, ffi.NULL)
-    lib.secp256k1_scalar_set_b32(s1, k.data, ffi.NULL)
-    lib.secp256k1_ecmult_gen_with_ctx(context.ctx, rj, s1)
-    lib.secp256k1_ge_set_gej(rp, rj)
-    lib.secp256k1_pubkey_save(ffi.addressof(pubkeys, i), rp)
-
-    print("Nonce pubkey of participant %d: %s" % (i, hexlify(bytes(pubkeys[i].data)).decode()))
-
-sessions[0].n_signers = THRESHOLD
-assert lib.secp256k1_frost_pubkey_combine(context.ctx, ffi.NULL, sessions[0], pubkeys)
-print("Combined key: %s" % hexlify(bytes(sessions[0].combined_pk.data)).decode())
-assert lib.secp256k1_xonly_pubkey_serialize(context.ctx, pk2, ffi.addressof(sessions[0], "combined_pk"))
-
-# Sign
-for i in range(THRESHOLD):
-    # Compute challenge hash
-    lib.secp256k1_schnorrsig_challenge(s2, pk2, msg, ffi.addressof(pk1, 1))
-    lib.secp256k1_scalar_set_b32(s1, agg_shares[i].data, ffi.NULL)
-    lib.secp256k1_frost_lagrange_coefficient(l, participants, THRESHOLD, sessions[i].my_index)
-    lib.secp256k1_scalar_mul(s1, s1, l)
-    lib.secp256k1_scalar_mul(s2, s2, s1)
-    ptr = ffi.new("secp256k1_xonly_pubkey *", sessions[0].combined_pk)
-    assert lib.secp256k1_xonly_pubkey_serialize(context.ctx, pk2, ptr)
-    lib.secp256k1_nonce_function_frost(k, the_id, agg_shares[i].data, msg, ffi.addressof(pk1, 1), b"FROST/non", 9, ffi.NULL)
-    lib.secp256k1_scalar_set_b32(s1, k.data, ffi.NULL)
-    if sessions[0].pk_parity:
-        lib.secp256k1_scalar_negate(s1, s1)
-    lib.secp256k1_scalar_add(s2, s2, s1)
-    lib.secp256k1_scalar_get_b32(p_sigs[i], s2)
-
-    print("Partial signature of participant %d: %s" % (i, hexlify(bytes(p_sigs[i])).decode()))
-
-# Combine sigs
-lib.secp256k1_scalar_clear(s1)
-for i in range(THRESHOLD):
-    lib.secp256k1_scalar_set_b32(s2, p_sigs[i], ffi.NULL)
-    lib.secp256k1_scalar_add(s1, s1, s2)
-
-lib.secp256k1_scalar_get_b32(ffi.addressof(sig, 32), s1)
-ffi.memmove(ffi.addressof(sig, 0), pk2, 32)
-
-sig_hex = hexlify(bytes(sig)).decode()
+sig_hex = hexlify(bytes(aggregator.signature)).decode()
 print("Resulting Schnorr signature: %s" % sig_hex)
 
-assert lib.secp256k1_schnorrsig_verify(context.ctx, sig, msg, ffi.addressof(sessions[1], "combined_pk"))
+assert lib.secp256k1_schnorrsig_verify(context.ctx, aggregator.signature, msg, ffi.addressof(participants[1].session, "combined_pk"))
 print("SCHNORR SIGNATURE VALID")
