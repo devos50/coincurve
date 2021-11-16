@@ -5,12 +5,11 @@ from coincurve._libsecp256k1 import ffi, lib
 
 from coincurve import GLOBAL_CONTEXT
 
-NUM_PARTICIPANTS = 4
+NUM_PARTICIPANTS = 3
 THRESHOLD = 2
-ACTIVE_SIGNERS = 3
+ACTIVE_SIGNERS = 2
 context = GLOBAL_CONTEXT
 msg = os.urandom(32)
-session_id = os.urandom(32)
 participants = []
 active_participants = [ind + 1 for ind in range(ACTIVE_SIGNERS)]
 print("Participants: %d, threshold: %d, #signers: %d" % (NUM_PARTICIPANTS, THRESHOLD, ACTIVE_SIGNERS))
@@ -24,6 +23,7 @@ class Participant:
         self.num_participants = num_participants
         self.threshold = threshold
         self.session = ffi.new("secp256k1_frost_keygen_session *")
+        self.session_id = os.urandom(32)
         self.secret_key = os.urandom(32)
         self.private_coefficients = ffi.new("secp256k1_scalar[%d]" % threshold)
         self.public_coefficients = ffi.new("secp256k1_pubkey[%d]" % threshold)
@@ -67,7 +67,7 @@ class Participant:
         serialized_group_key = ffi.new("unsigned char[33]")
         lib.secp256k1_xonly_pubkey_serialize(context.ctx, serialized_group_key, ffi.addressof(self.session, "combined_pk"))
         lib.secp256k1_nonce_function_frost(self.nonce,
-                                           session_id,
+                                           self.session_id,
                                            self.aggregated_share.data,
                                            msg,
                                            serialized_group_key,
@@ -97,7 +97,7 @@ class Participant:
         lib.secp256k1_frost_lagrange_coefficient(l, active_participants, len(active_participants), self.session.my_index)
         lib.secp256k1_scalar_mul(scalar1, scalar1, l)
         lib.secp256k1_scalar_mul(scalar2, c, scalar1)
-        lib.secp256k1_nonce_function_frost(self.nonce, session_id, self.aggregated_share.data, msg,
+        lib.secp256k1_nonce_function_frost(self.nonce, self.session_id, self.aggregated_share.data, msg,
                                            ffi.addressof(aggregated_pk, 1), b"FROST/non", 9,
                                            ffi.NULL)
         lib.secp256k1_scalar_set_b32(scalar1, participant.nonce.data, ffi.NULL)
@@ -136,14 +136,14 @@ class Aggregator:
 
         assert lib.secp256k1_ec_pubkey_serialize(context.ctx, self.aggregated_pk, size, ffi.addressof(pubkeys, self.participant.session.my_index - 1), lib.SECP256K1_EC_COMPRESSED)
 
-    def compute_signature(self, partial_signatures, group_commitment):
+    def compute_signature(self, partial_signatures):
         z = ffi.new("secp256k1_scalar *")
         zi = ffi.new("secp256k1_scalar *")
         for partial_signature in partial_signatures:
             lib.secp256k1_scalar_set_b32(zi, partial_signature, ffi.NULL)
             lib.secp256k1_scalar_add(z, z, zi)
 
-        ffi.memmove(ffi.addressof(self.signature, 0), group_commitment, 32)
+        ffi.memmove(ffi.addressof(self.signature, 0), self.group_commitment, 32)
         lib.secp256k1_scalar_get_b32(ffi.addressof(self.signature, 32), z)
 
     def compute_group_commitment(self):
@@ -183,9 +183,9 @@ for participant in participants:
 # Round 2.3
 # TODO share secret shares with other participants
 for participant in participants:
-    rec_shares = []
-    for other_participant in participants:
-        rec_shares.append(other_participant.secret_shares[participant.session.my_index - 1])
+    rec_shares = ffi.new("secp256k1_frost_share[%d]" % NUM_PARTICIPANTS)
+    for ind, other_participant in enumerate(participants):
+        rec_shares[ind] = other_participant.secret_shares[participant.session.my_index - 1]
 
     participant.aggregate_shares(rec_shares)
 
@@ -213,7 +213,7 @@ for participant_index in active_participants:
 
 # Combine partial signatures (step 7c)
 partial_signatures = [participants[ind - 1].partial_signature for ind in active_participants]
-aggregator.compute_signature(partial_signatures, aggregator.group_commitment)
+aggregator.compute_signature(partial_signatures)
 
 sig_hex = hexlify(bytes(aggregator.signature)).decode()
 print("Resulting Schnorr signature: %s" % sig_hex)
