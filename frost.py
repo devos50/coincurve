@@ -5,11 +5,11 @@ from coincurve._libsecp256k1 import ffi, lib
 
 from coincurve import GLOBAL_CONTEXT
 
-NUM_PARTICIPANTS = 3
+NUM_PARTICIPANTS = 2
 THRESHOLD = 2
 ACTIVE_SIGNERS = 2
 context = GLOBAL_CONTEXT
-msg = os.urandom(32)
+msg = b'\x01' * 32
 participants = []
 active_participants = [ind + 1 for ind in range(ACTIVE_SIGNERS)]
 print("Participants: %d, threshold: %d, #signers: %d" % (NUM_PARTICIPANTS, THRESHOLD, ACTIVE_SIGNERS))
@@ -23,8 +23,8 @@ class Participant:
         self.num_participants = num_participants
         self.threshold = threshold
         self.session = ffi.new("secp256k1_frost_keygen_session *")
-        self.session_id = os.urandom(32)
-        self.secret_key = os.urandom(32)
+        self.session_id = b'\x00' * 32
+        self.secret_key = chr(self.index).encode() * 32
         self.private_coefficients = ffi.new("secp256k1_scalar[%d]" % threshold)
         self.public_coefficients = ffi.new("secp256k1_pubkey[%d]" % threshold)
         self.secret_shares = ffi.new("secp256k1_frost_share[%d]" % num_participants)
@@ -124,6 +124,9 @@ class Aggregator:
         size[0] = 33
 
         for participant_index, aggregated_share in aggregated_shares:
+            print(participant_index)
+            print(hexlify(bytes(aggregated_share.data)).decode())
+
             l = ffi.new("secp256k1_scalar *")
             lib.secp256k1_frost_lagrange_coefficient(l, active_participants, len(active_participants), participant_index)
             lib.secp256k1_scalar_set_b32(scalar1, aggregated_share.data, ffi.NULL)
@@ -132,6 +135,7 @@ class Aggregator:
 
         lib.secp256k1_ecmult_gen_with_ctx(context.ctx, rj, scalar2)
         lib.secp256k1_ge_set_gej(rp, rj)
+
         lib.secp256k1_pubkey_save(ffi.addressof(pubkeys, self.participant.session.my_index - 1), rp)
 
         assert lib.secp256k1_ec_pubkey_serialize(context.ctx, self.aggregated_pk, size, ffi.addressof(pubkeys, self.participant.session.my_index - 1), lib.SECP256K1_EC_COMPRESSED)
@@ -188,11 +192,16 @@ for participant in participants:
         rec_shares[ind] = other_participant.secret_shares[participant.session.my_index - 1]
 
     participant.aggregate_shares(rec_shares)
+    aggregated_share = hexlify(bytes(participant.aggregated_share.data)).decode()
+    print("Aggregated share of participant %d: %s" % (participant.index, aggregated_share))
 
 # DONE BY AGGREGATOR
 aggregator = Aggregator(participants[0], len(active_participants))
 aggregated_shares = [(ind, participants[ind - 1].aggregated_share) for ind in active_participants]
 aggregator.aggregate_shares(aggregated_shares, active_participants)
+
+aggregated_pk_hex = hexlify(bytes(aggregator.aggregated_pk)).decode()
+print("Aggregated pk: %s" % aggregated_pk_hex)
 
 # Generate nonce pks, done by participants
 for participant_index in active_participants:
